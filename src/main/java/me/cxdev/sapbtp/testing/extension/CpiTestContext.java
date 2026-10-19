@@ -1,6 +1,8 @@
 package me.cxdev.sapbtp.testing.extension;
 
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import me.cxdev.sapbtp.testing.collector.CollectedDocument;
@@ -22,6 +24,7 @@ public class CpiTestContext {
     private final CollectorClient collectorClient;
     private final ResidualChecker residualChecker;
     private final CopyOnWriteArrayList<CollectedDocument> collectedDocuments = new CopyOnWriteArrayList<>();
+    private final Set<String> testRunIdsForCurrentTest = ConcurrentHashMap.newKeySet();
 
     public CpiTestContext(
             String runId,
@@ -84,15 +87,32 @@ public class CpiTestContext {
         return cpiCommunicationClient.sendRawRequest(resourcePathOnCpi, payload);
     }
 
-    public String getCorrelationIdForMessageId(String messageId) {
-        return cpiCommunicationClient.getCorrelationIdForMessageId(messageId, runId);
+    public String getCorrelationIdForMessageId(String messageId, String testRunId) {
+        return cpiCommunicationClient.getCorrelationIdForMessageId(messageId, testRunId);
     }
 
-    public List<MonitoringEntry> waitForCompletion(String correlationId) {
-        return cpiCommunicationClient.waitForCompletion(correlationId, runId);
+    public List<MonitoringEntry> waitForCompletion(String correlationId, String testRunId) {
+        return cpiCommunicationClient.waitForCompletion(correlationId, testRunId);
     }
 
-    public List<MonitoringEntry> waitForCompletionForMessageId(String messageId) {
-        return cpiCommunicationClient.waitForCompletionForMessageId(messageId, runId);
+    public List<MonitoringEntry> waitForCompletionForMessageId(String messageId, String testRunId) {
+        return cpiCommunicationClient.waitForCompletionForMessageId(messageId, testRunId);
+    }
+
+    public void recordTestRunId(String testRunId) {
+        if (testRunId != null && !testRunId.isBlank()) {
+            testRunIdsForCurrentTest.add(testRunId);
+        }
+    }
+
+    public void resetTestRunIdsForCurrentTest() {
+        testRunIdsForCurrentTest.clear();
+    }
+
+    public void deleteCollectorRunsForCurrentTest() {
+        for (String testRunId : testRunIdsForCurrentTest) {
+            collectorClient.deleteRun(testRunId);
+        }
+        testRunIdsForCurrentTest.clear();
     }
 }

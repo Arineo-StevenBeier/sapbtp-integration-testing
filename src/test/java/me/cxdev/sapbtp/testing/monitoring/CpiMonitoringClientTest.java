@@ -43,6 +43,42 @@ class CpiMonitoringClientTest {
     }
 
     @Test
+    void fetchMessageIdsUsesOAuth2BearerTokenWhenConfigured() throws Exception {
+        try (MockWebServer server = new MockWebServer(); MockWebServer tokenServer = new MockWebServer()) {
+            tokenServer.enqueue(new MockResponse()
+                    .setHeader("Content-Type", "application/json")
+                    .setBody("{\"access_token\":\"access-token-1\",\"expires_in\":3600}"));
+            tokenServer.start();
+            server.enqueue(new MockResponse()
+                    .setHeader("Content-Type", "application/json")
+                    .setBody("{\"d\":{\"results\":[{\"MessageGuid\":\"msg-001\"}]}}"));
+            server.start();
+
+            CpiTestConfig config = new CpiTestConfig(
+                    server.url("/").toString(),
+                    null,
+                    null,
+                    server.url("/").toString(),
+                    null,
+                    null,
+                    "http://collector",
+                    10,
+                    50,
+                    tokenServer.url("/oauth/token").toString(),
+                    null,
+                    null,
+                    "monitoring-client-id",
+                    "monitoring-client-secret");
+            CpiMonitoringClient client = new CpiMonitoringClient(new OkHttpTransport(), config);
+
+            client.fetchMessageIds("corr-123", "run-1");
+            RecordedRequest request = server.takeRequest();
+
+            assertEquals("Bearer access-token-1", request.getHeader("Authorization"));
+        }
+    }
+
+    @Test
     void fetchMessageIdsRetriesUntilMessagesAreAvailable() throws Exception {
         try (MockWebServer server = new MockWebServer()) {
             server.enqueue(new MockResponse().setHeader("Content-Type", "application/json").setBody("{\"d\":{\"results\":[]}}"));

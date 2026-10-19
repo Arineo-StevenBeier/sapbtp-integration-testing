@@ -49,6 +49,17 @@ public class OkHttpTransport implements HttpTransport {
         }
     }
 
+    @Override
+    public HttpResponse delete(String url, Map<String, String> headers) {
+        Request.Builder builder = new Request.Builder().url(url).delete();
+        headers.forEach(builder::addHeader);
+        try (Response response = client.newCall(builder.build()).execute()) {
+            return toResponse(response);
+        } catch (IOException e) {
+            throw new IllegalStateException("HTTP DELETE failed for " + url, e);
+        }
+    }
+
     private HttpResponse toResponse(Response response) throws IOException {
         Map<String, String> responseHeaders = new LinkedHashMap<>();
         for (String name : response.headers().names()) {

@@ -10,4 +10,6 @@ public interface HttpTransport {
     }
 
     HttpResponse post(String url, String body, Map<String, String> headers, String contentType);
+
+    HttpResponse delete(String url, Map<String, String> headers);
 }

@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import me.cxdev.sapbtp.testing.auth.OAuth2TokenProvider;
 import me.cxdev.sapbtp.testing.config.CpiTestConfig;
 import me.cxdev.sapbtp.testing.http.HttpResponse;
 import me.cxdev.sapbtp.testing.http.HttpTransport;
@@ -22,6 +23,7 @@ public class CpiMonitoringClient {
     private final CpiTestConfig config;
     private final MonitoringParser parser;
     private final Sleeper sleeper;
+    private final OAuth2TokenProvider tokenProvider;
 
     public CpiMonitoringClient(HttpTransport transport, CpiTestConfig config) {
         this(transport, config, new MonitoringParser(), Thread::sleep);
@@ -32,12 +34,16 @@ public class CpiMonitoringClient {
         this.config = Objects.requireNonNull(config, "config");
         this.parser = Objects.requireNonNull(parser, "parser");
         this.sleeper = Objects.requireNonNull(sleeper, "sleeper");
+        this.tokenProvider = config.isMonitoringOAuth2Configured()
+                ? new OAuth2TokenProvider(
+                        transport, config.getTokenUrl(), config.getMonitoringClientId(), config.getMonitoringClientSecret())
+                : null;
     }
 
-    public List<String> fetchMessageIds(String correlationId, String runId) {
+    public List<String> fetchMessageIds(String correlationId, String testRunId) {
         long deadline = System.currentTimeMillis() + config.getPollingTimeoutMs();
         while (true) {
-            MonitoringResponse parsedResponse = loadByCorrelationId(correlationId, runId);
+            MonitoringResponse parsedResponse = loadByCorrelationId(correlationId, testRunId);
             List<String> messageIds = parsedResponse.messageIds();
             if (!messageIds.isEmpty()) {
                 return messageIds;
@@ -45,59 +51,59 @@ public class CpiMonitoringClient {
             if (System.currentTimeMillis() >= deadline) {
                 return List.of();
             }
-            sleepQuietly(correlationId, runId);
+            sleepQuietly(correlationId, testRunId);
         }
     }
 
-    public String getCorrelationIdForMessageId(String messageId, String runId) {
+    public String getCorrelationIdForMessageId(String messageId, String testRunId) {
         Objects.requireNonNull(messageId, "messageId");
         long deadline = System.currentTimeMillis() + config.getPollingTimeoutMs();
         while (true) {
-            MonitoringResponse response = loadByMessageId(messageId, runId);
+            MonitoringResponse response = loadByMessageId(messageId, testRunId);
             String correlationId = response.correlationIdForMessageId(messageId);
             if (correlationId != null && !correlationId.isBlank()) {
                 return correlationId;
             }
             if (System.currentTimeMillis() >= deadline) {
-                throw new IllegalStateException("No correlationId found for messageId=" + messageId + ", runId=" + runId);
+                throw new IllegalStateException("No correlationId found for messageId=" + messageId + ", testRunId=" + testRunId);
             }
-            sleepQuietly("messageId=" + messageId, runId);
+            sleepQuietly("messageId=" + messageId, testRunId);
         }
     }
 
-    public List<MonitoringEntry> awaitCompletion(String correlationId, String runId) {
+    public List<MonitoringEntry> awaitCompletion(String correlationId, String testRunId) {
         Objects.requireNonNull(correlationId, "correlationId");
         long deadline = System.currentTimeMillis() + config.getPollingTimeoutMs();
         MonitoringResponse latestResponse = new MonitoringResponse(List.of());
         while (true) {
-            latestResponse = loadByCorrelationId(correlationId, runId);
+            latestResponse = loadByCorrelationId(correlationId, testRunId);
             if (latestResponse.allEntriesTerminal()) {
                 return latestResponse.entries();
             }
             if (System.currentTimeMillis() >= deadline) {
                 throw new IllegalStateException("Monitoring polling timed out before terminal status for correlationId="
-                        + correlationId + ", runId=" + runId + ", statuses=" + latestResponse.entries().stream()
+                        + correlationId + ", testRunId=" + testRunId + ", statuses=" + latestResponse.entries().stream()
                         .map(entry -> entry.messageId() + ":" + entry.status())
                         .toList());
             }
-            sleepQuietly(correlationId, runId);
+            sleepQuietly(correlationId, testRunId);
         }
     }
 
-    private MonitoringResponse loadByCorrelationId(String correlationId, String runId) {
+    private MonitoringResponse loadByCorrelationId(String correlationId, String testRunId) {
         HttpResponse response = transport.get(buildCorrelationUrl(correlationId), buildHeaders());
-        return parseResponse(response, "correlationId=" + correlationId, runId);
+        return parseResponse(response, "correlationId=" + correlationId, testRunId);
     }
 
-    private MonitoringResponse loadByMessageId(String messageId, String runId) {
+    private MonitoringResponse loadByMessageId(String messageId, String testRunId) {
         HttpResponse response = transport.get(buildMessageIdUrl(messageId), buildHeaders());
-        return parseResponse(response, "messageId=" + messageId, runId);
+        return parseResponse(response, "messageId=" + messageId, testRunId);
     }
 
-    private MonitoringResponse parseResponse(HttpResponse response, String identifier, String runId) {
+    private MonitoringResponse parseResponse(HttpResponse response, String identifier, String testRunId) {
         if (response.statusCode() != 200) {
             throw new IllegalStateException(
-                    "Monitoring API returned status " + response.statusCode() + " for " + identifier + ", runId=" + runId);
+                    "Monitoring API returned status " + response.statusCode() + " for " + identifier + ", testRunId=" + testRunId);
         }
         return parser.parse(response.body());
     }
@@ -120,18 +126,20 @@ public class CpiMonitoringClient {
 
     private Map<String, String> buildHeaders() {
         Map<String, String> headers = new LinkedHashMap<>();
-        headers.put("Authorization", Credentials.basic(config.getMonitoringUser(), config.getMonitoringPassword()));
+        headers.put("Authorization", tokenProvider != null
+                ? "Bearer " + tokenProvider.getAccessToken()
+                : Credentials.basic(config.getMonitoringUser(), config.getMonitoringPassword()));
         headers.put("Accept", "application/json");
         return headers;
     }
 
-    private void sleepQuietly(String correlationId, String runId) {
+    private void sleepQuietly(String correlationId, String testRunId) {
         try {
             sleeper.sleep(config.getPollingIntervalMs());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(
-                    "Monitoring polling interrupted for correlationId=" + correlationId + ", runId=" + runId,
+                    "Monitoring polling interrupted for correlationId=" + correlationId + ", testRunId=" + testRunId,
                     e);
         }
     }

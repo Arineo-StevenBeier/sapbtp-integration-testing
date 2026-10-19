@@ -1,9 +1,21 @@
 plugins {
     id 'java-library'
+	id 'maven-publish'
 }
 
 group = 'me.cxdev.sapbtp'
 version = '1.0.0-SNAPSHOT'
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+        }
+    }
+    repositories {
+        mavenLocal()
+    }
+}
 
 java {
     toolchain {

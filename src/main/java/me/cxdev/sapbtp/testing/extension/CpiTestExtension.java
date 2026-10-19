@@ -15,12 +15,14 @@ import me.cxdev.sapbtp.testing.residual.ResidualChecker;
 import me.cxdev.sapbtp.testing.residual.ResidualDocument;
 import org.junit.jupiter.api.extension.AfterAllCallback;
 import org.junit.jupiter.api.extension.BeforeAllCallback;
+import org.junit.jupiter.api.extension.BeforeEachCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 import org.junit.jupiter.api.extension.ParameterContext;
 import org.junit.jupiter.api.extension.ParameterResolutionException;
 import org.junit.jupiter.api.extension.ParameterResolver;
+import org.junit.jupiter.api.extension.TestWatcher;
 
-public class CpiTestExtension implements BeforeAllCallback, AfterAllCallback, ParameterResolver {
+public class CpiTestExtension implements BeforeAllCallback, AfterAllCallback, BeforeEachCallback, TestWatcher, ParameterResolver {
     private static final ExtensionContext.Namespace NAMESPACE = ExtensionContext.Namespace.create(CpiTestExtension.class);
     private static final String CONTEXT_RESOURCE_KEY = "cpi-test-context-resource";
 
@@ -37,6 +39,22 @@ public class CpiTestExtension implements BeforeAllCallback, AfterAllCallback, Pa
     }
 
     @Override
+    public void beforeEach(ExtensionContext context) {
+        resource(context).context().resetTestRunIdsForCurrentTest();
+    }
+
+    @Override
+    public void testSuccessful(ExtensionContext context) {
+        // Only clean up the Collector run when the test actually passed, so a
+        // failing test's data stays available in the Collector for debugging.
+        resource(context).context().deleteCollectorRunsForCurrentTest();
+    }
+
+    private ContextResource resource(ExtensionContext context) {
+        return context.getRoot().getStore(NAMESPACE).get(CONTEXT_RESOURCE_KEY, ContextResource.class);
+    }
+
+    @Override
     public boolean supportsParameter(ParameterContext parameterContext, ExtensionContext extensionContext)
             throws ParameterResolutionException {
         Class<?> parameterType = parameterContext.getParameter().getType();
@@ -48,8 +66,7 @@ public class CpiTestExtension implements BeforeAllCallback, AfterAllCallback, Pa
     @Override
     public Object resolveParameter(ParameterContext parameterContext, ExtensionContext extensionContext)
             throws ParameterResolutionException {
-        ContextResource resource = extensionContext.getRoot().getStore(NAMESPACE)
-                .get(CONTEXT_RESOURCE_KEY, ContextResource.class);
+        ContextResource resource = resource(extensionContext);
         if (resource == null) {
             throw new ParameterResolutionException("CpiTestContext has not been initialized");
         }

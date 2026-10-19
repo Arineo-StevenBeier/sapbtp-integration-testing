@@ -10,6 +10,11 @@ public final class CpiTestConfig {
     private final String collectorBaseUrl;
     private final int pollingIntervalMs;
     private final int pollingTimeoutMs;
+    private final String tokenUrl;
+    private final String clientId;
+    private final String clientSecret;
+    private final String monitoringClientId;
+    private final String monitoringClientSecret;
 
     public CpiTestConfig(
             String monitoringBaseUrl,
@@ -27,7 +32,12 @@ public final class CpiTestConfig {
                 monitoringPassword,
                 collectorBaseUrl,
                 pollingIntervalMs,
-                pollingTimeoutMs);
+                pollingTimeoutMs,
+                null,
+                null,
+                null,
+                null,
+                null);
     }
 
     public CpiTestConfig(
@@ -40,6 +50,68 @@ public final class CpiTestConfig {
             String collectorBaseUrl,
             Integer pollingIntervalMs,
             Integer pollingTimeoutMs) {
+        this(
+                monitoringBaseUrl,
+                monitoringUser,
+                monitoringPassword,
+                inboundBaseUrl,
+                inboundUser,
+                inboundPassword,
+                collectorBaseUrl,
+                pollingIntervalMs,
+                pollingTimeoutMs,
+                null,
+                null,
+                null,
+                null,
+                null);
+    }
+
+    public CpiTestConfig(
+            String monitoringBaseUrl,
+            String monitoringUser,
+            String monitoringPassword,
+            String inboundBaseUrl,
+            String inboundUser,
+            String inboundPassword,
+            String collectorBaseUrl,
+            Integer pollingIntervalMs,
+            Integer pollingTimeoutMs,
+            String tokenUrl,
+            String clientId,
+            String clientSecret) {
+        this(
+                monitoringBaseUrl,
+                monitoringUser,
+                monitoringPassword,
+                inboundBaseUrl,
+                inboundUser,
+                inboundPassword,
+                collectorBaseUrl,
+                pollingIntervalMs,
+                pollingTimeoutMs,
+                tokenUrl,
+                clientId,
+                clientSecret,
+                null,
+                null);
+    }
+
+    public CpiTestConfig(
+            String monitoringBaseUrl,
+            String monitoringUser,
+            String monitoringPassword,
+            String inboundBaseUrl,
+            String inboundUser,
+            String inboundPassword,
+            String collectorBaseUrl,
+            Integer pollingIntervalMs,
+            Integer pollingTimeoutMs,
+            String tokenUrl,
+            String clientId,
+            String clientSecret,
+            String monitoringClientId,
+            String monitoringClientSecret) {
         this.monitoringBaseUrl = monitoringBaseUrl;
         this.monitoringUser = monitoringUser;
         this.monitoringPassword = monitoringPassword;
@@ -49,6 +121,11 @@ public final class CpiTestConfig {
         this.collectorBaseUrl = collectorBaseUrl;
         this.pollingIntervalMs = pollingIntervalMs == null ? 5000 : pollingIntervalMs;
         this.pollingTimeoutMs = pollingTimeoutMs == null ? 60000 : pollingTimeoutMs;
+        this.tokenUrl = tokenUrl;
+        this.clientId = clientId;
+        this.clientSecret = clientSecret;
+        this.monitoringClientId = monitoringClientId;
+        this.monitoringClientSecret = monitoringClientSecret;
     }
 
     public String getMonitoringBaseUrl() {
@@ -85,6 +162,34 @@ public final class CpiTestConfig {
 
     public int getPollingTimeoutMs() {
         return pollingTimeoutMs;
+    }
+
+    public String getTokenUrl() {
+        return tokenUrl;
+    }
+
+    public String getClientId() {
+        return clientId;
+    }
+
+    public String getClientSecret() {
+        return clientSecret;
+    }
+
+    public String getMonitoringClientId() {
+        return monitoringClientId;
+    }
+
+    public String getMonitoringClientSecret() {
+        return monitoringClientSecret;
+    }
+
+    public boolean isOAuth2Configured() {
+        return !isBlank(tokenUrl) && !isBlank(clientId) && !isBlank(clientSecret);
+    }
+
+    public boolean isMonitoringOAuth2Configured() {
+        return !isBlank(tokenUrl) && !isBlank(monitoringClientId) && !isBlank(monitoringClientSecret);
     }
 
     private boolean isBlank(String value) {

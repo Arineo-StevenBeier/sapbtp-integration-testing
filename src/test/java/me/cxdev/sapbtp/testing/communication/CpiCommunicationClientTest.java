@@ -24,6 +24,7 @@ class CpiCommunicationClientTest {
             inboundServer.enqueue(new MockResponse()
                     .setHeader("SAP_MessageProcessingLogID", "msg-001")
                     .setHeader("CorrelationId", "corr-001")
+                    .setHeader("x-test-run-id", "run-abc")
                     .setBody("{\"accepted\":true}"));
             inboundServer.start();
             monitoringServer.start();
@@ -49,6 +50,7 @@ class CpiCommunicationClientTest {
             assertTrue(response.isSuccessful());
             assertEquals("msg-001", response.requireMessageId());
             assertEquals("corr-001", response.requireCorrelationId());
+            assertEquals("run-abc", response.requireTestRunId());
             assertEquals("/iflow/orders", request.getPath());
             assertEquals("application/xml; charset=utf-8", request.getHeader("Content-Type"));
         }
@@ -88,6 +90,47 @@ class CpiCommunicationClientTest {
             assertEquals("msg-002", response.requireMessageId());
             assertEquals("/iflow/invoices", request.getPath());
             assertEquals("<invoice/>", request.getBody().readUtf8());
+        }
+    }
+
+    @Test
+    void sendRawRequestUsesOAuth2BearerTokenWhenConfigured() throws Exception {
+        try (MockWebServer inboundServer = new MockWebServer();
+                MockWebServer monitoringServer = new MockWebServer();
+                MockWebServer tokenServer = new MockWebServer()) {
+            tokenServer.enqueue(new MockResponse()
+                    .setHeader("Content-Type", "application/json")
+                    .setBody("{\"access_token\":\"access-token-1\",\"expires_in\":3600}"));
+            tokenServer.start();
+            inboundServer.enqueue(new MockResponse()
+                    .setHeader("SAP_MessageProcessingLogID", "msg-004")
+                    .setHeader("CorrelationId", "corr-004")
+                    .setBody("{\"accepted\":true}"));
+            inboundServer.start();
+            monitoringServer.start();
+
+            CpiTestConfig config = new CpiTestConfig(
+                    monitoringServer.url("/").toString(),
+                    null,
+                    null,
+                    inboundServer.url("/").toString(),
+                    null,
+                    null,
+                    "http://collector",
+                    1,
+                    50,
+                    tokenServer.url("/oauth/token").toString(),
+                    "client-id",
+                    "client-secret");
+            CpiCommunicationClient client = new CpiCommunicationClient(
+                    new OkHttpTransport(),
+                    config,
+                    new CpiMonitoringClient(new OkHttpTransport(), config));
+
+            client.sendRawRequest("/iflow/orders", "<order/>");
+            RecordedRequest request = inboundServer.takeRequest();
+
+            assertEquals("Bearer access-token-1", request.getHeader("Authorization"));
         }
     }
 

@@ -18,7 +18,7 @@ class ResidualCheckerTest {
         Ledger ledger = new Ledger();
         ledger.register("corr-1", "test-case-1");
         ledger.recordMessageIds("corr-1", List.of("msg-1"));
-        List<CollectedDocument> documents = List.of(new CollectedDocument("msg-1", 0, "<payload/>", Map.of("CorrelationId", "corr-1")));
+        List<CollectedDocument> documents = List.of(new CollectedDocument("msg-1", 0, "<payload/>", Map.of()));
 
         List<ResidualDocument> residuals = checker.checkResiduals(ledger, documents);
 
@@ -26,18 +26,17 @@ class ResidualCheckerTest {
     }
 
     @Test
-    void extraDocumentAppearsInResiduals() {
+    void unregisteredMessageIdAppearsAsResidualRegardlessOfHeaders() {
         Ledger ledger = new Ledger();
         ledger.register("corr-1", "test-case-1");
         ledger.recordMessageIds("corr-1", List.of("msg-1"));
         List<CollectedDocument> documents = List.of(
-                new CollectedDocument("msg-1", 0, "<payload/>", Map.of("CorrelationId", "corr-1")),
-                new CollectedDocument("msg-2", 1, "<payload/>", Map.of("CorrelationId", "corr-1")));
+                new CollectedDocument("msg-1", 0, "<payload/>", Map.of()),
+                new CollectedDocument("msg-2", 0, "<payload/>", Map.of()));
 
         List<ResidualDocument> residuals = checker.checkResiduals(ledger, documents);
 
         assertEquals(1, residuals.size());
         assertEquals("msg-2", residuals.get(0).messageId());
-        assertEquals("test-case-1", residuals.get(0).assignedTestCase());
     }
 }

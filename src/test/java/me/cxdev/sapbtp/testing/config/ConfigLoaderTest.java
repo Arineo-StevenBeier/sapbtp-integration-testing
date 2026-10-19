@@ -94,6 +94,81 @@ class ConfigLoaderTest {
     }
 
     @Test
+    void oauth2CredentialsSatisfyAuthenticationRequirementWithoutBasicAuth() throws IOException {
+        Path configDir = Files.createDirectories(Path.of("build/test-config/config-oauth2"));
+        Files.writeString(configDir.resolve("sapbtp-integration-testing-config-local.yaml"), """
+                cpi:
+                  test:
+                    monitoringBaseUrl: "https://monitoring.example.test"
+                    collectorBaseUrl: "http://collector"
+                    tokenUrl: "https://monitoring.example.test/oauth/token"
+                    monitoringClientId: "client-id"
+                    monitoringClientSecret: "client-secret"
+                """);
+
+        ConfigLoader loader = new ConfigLoader(configDir, Map.of(), new Properties());
+
+        CpiTestConfig config = loader.load(CpiTestProfile.LOCAL);
+
+        assertEquals("https://monitoring.example.test/oauth/token", config.getTokenUrl());
+        assertEquals(true, config.isMonitoringOAuth2Configured());
+    }
+
+    @Test
+    void missingAuthenticationConfigurationThrows() throws IOException {
+        Path configDir = Files.createDirectories(Path.of("build/test-config/config-missing-auth"));
+        Files.writeString(configDir.resolve("sapbtp-integration-testing-config-local.yaml"), """
+                cpi:
+                  test:
+                    monitoringBaseUrl: "https://monitoring.example.test"
+                    collectorBaseUrl: "http://collector"
+                """);
+
+        ConfigLoader loader = new ConfigLoader(configDir, Map.of(), new Properties());
+
+        ConfigValidationException exception = assertThrows(ConfigValidationException.class, () -> loader.load(CpiTestProfile.LOCAL));
+        assertEquals(
+                "Missing authentication configuration: provide either monitoringUser/monitoringPassword "
+                        + "(Basic Auth) or tokenUrl/monitoringClientId/monitoringClientSecret (OAuth2 client credentials)",
+                exception.getMessage());
+    }
+
+    @Test
+    void rawEnvironmentVariableNamesAreHonoredAsFallback() throws IOException {
+        Path configDir = Files.createDirectories(Path.of("build/test-config/config-raw-env"));
+        Files.writeString(configDir.resolve("sapbtp-integration-testing-config-local.yaml"), """
+                cpi:
+                  test:
+                    pollingIntervalMs: 100
+                    pollingTimeoutMs: 200
+                """);
+
+        Map<String, String> env = Map.of(
+                "CPI_TENANT_URL", "https://tenant.example.test",
+                "CPI_MONITORING_URL", "https://monitoring.example.test",
+                "COLLECTOR_URL", "http://collector.example.test",
+                "CPI_TOKEN_URL", "https://tenant.example.test/oauth/token",
+                "CPI_CLIENT_ID", "raw-client-id",
+                "CPI_CLIENT_SECRET", "raw-client-secret",
+                "CPI_MONITORING_ID", "raw-monitoring-id",
+                "CPI_MONITORING_SECRET", "raw-monitoring-secret");
+        ConfigLoader loader = new ConfigLoader(configDir, env, new Properties());
+
+        CpiTestConfig config = loader.load(CpiTestProfile.LOCAL);
+
+        assertEquals("https://monitoring.example.test", config.getMonitoringBaseUrl());
+        assertEquals("https://tenant.example.test", config.getInboundBaseUrl());
+        assertEquals("http://collector.example.test", config.getCollectorBaseUrl());
+        assertEquals("https://tenant.example.test/oauth/token", config.getTokenUrl());
+        assertEquals("raw-client-id", config.getClientId());
+        assertEquals("raw-client-secret", config.getClientSecret());
+        assertEquals("raw-monitoring-id", config.getMonitoringClientId());
+        assertEquals("raw-monitoring-secret", config.getMonitoringClientSecret());
+        assertEquals(true, config.isOAuth2Configured());
+        assertEquals(true, config.isMonitoringOAuth2Configured());
+    }
+
+    @Test
     void inboundSettingsFallBackToMonitoringSettings() throws IOException {
         Path configDir = Files.createDirectories(Path.of("build/test-config/config-inbound-fallback"));
         Files.writeString(configDir.resolve("sapbtp-integration-testing-config-local.yaml"), """

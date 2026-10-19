@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import me.cxdev.sapbtp.testing.auth.OAuth2TokenProvider;
 import me.cxdev.sapbtp.testing.config.CpiTestConfig;
 import me.cxdev.sapbtp.testing.http.HttpResponse;
 import me.cxdev.sapbtp.testing.http.HttpTransport;
@@ -31,11 +32,13 @@ public class CpiCommunicationClient {
             "CorrelationID",
             "correlationId",
             "X-Correlation-Id");
+    private static final List<String> TEST_RUN_ID_KEYS = List.of("x-test-run-id", "testRunId");
 
     private final HttpTransport transport;
     private final CpiTestConfig config;
     private final CpiMonitoringClient monitoringClient;
     private final ClassLoader classLoader;
+    private final OAuth2TokenProvider tokenProvider;
 
     public CpiCommunicationClient(HttpTransport transport, CpiTestConfig config, CpiMonitoringClient monitoringClient) {
         this(transport, config, monitoringClient, Thread.currentThread().getContextClassLoader());
@@ -50,6 +53,9 @@ public class CpiCommunicationClient {
         this.config = Objects.requireNonNull(config, "config");
         this.monitoringClient = Objects.requireNonNull(monitoringClient, "monitoringClient");
         this.classLoader = classLoader;
+        this.tokenProvider = config.isOAuth2Configured()
+                ? new OAuth2TokenProvider(transport, config.getTokenUrl(), config.getClientId(), config.getClientSecret())
+                : null;
     }
 
     public CpiSendResult sendRawRequest(String resourcePath, String payload) {
@@ -66,22 +72,23 @@ public class CpiCommunicationClient {
         return sendRawRequest(resourcePath, payload, detectContentType(localPath, payload));
     }
 
-    public String getCorrelationIdForMessageId(String messageId, String runId) {
-        return monitoringClient.getCorrelationIdForMessageId(messageId, runId);
+    public String getCorrelationIdForMessageId(String messageId, String testRunId) {
+        return monitoringClient.getCorrelationIdForMessageId(messageId, testRunId);
     }
 
-    public List<MonitoringEntry> waitForCompletion(String correlationId, String runId) {
-        return monitoringClient.awaitCompletion(correlationId, runId);
+    public List<MonitoringEntry> waitForCompletion(String correlationId, String testRunId) {
+        return monitoringClient.awaitCompletion(correlationId, testRunId);
     }
 
-    public List<MonitoringEntry> waitForCompletionForMessageId(String messageId, String runId) {
-        String correlationId = getCorrelationIdForMessageId(messageId, runId);
-        return waitForCompletion(correlationId, runId);
+    public List<MonitoringEntry> waitForCompletionForMessageId(String messageId, String testRunId) {
+        String correlationId = getCorrelationIdForMessageId(messageId, testRunId);
+        return waitForCompletion(correlationId, testRunId);
     }
 
     private CpiSendResult toSendResult(HttpResponse response) {
         String messageId = firstMatchingValue(response.headers(), MESSAGE_ID_KEYS);
         String correlationId = firstMatchingValue(response.headers(), CORRELATION_ID_KEYS);
+        String testRunId = firstMatchingValue(response.headers(), TEST_RUN_ID_KEYS);
         if ((messageId == null || messageId.isBlank()) || (correlationId == null || correlationId.isBlank())) {
             Map<String, String> responseBodyValues = parseBodyFields(response.body());
             if (messageId == null || messageId.isBlank()) {
@@ -91,12 +98,14 @@ public class CpiCommunicationClient {
                 correlationId = firstMatchingValue(responseBodyValues, CORRELATION_ID_KEYS);
             }
         }
-        return new CpiSendResult(response.statusCode(), response.body(), response.headers(), messageId, correlationId);
+        return new CpiSendResult(response.statusCode(), response.body(), response.headers(), messageId, correlationId, testRunId);
     }
 
     private Map<String, String> buildHeaders() {
         Map<String, String> headers = new LinkedHashMap<>();
-        headers.put("Authorization", Credentials.basic(config.getInboundUser(), config.getInboundPassword()));
+        headers.put("Authorization", tokenProvider != null
+                ? "Bearer " + tokenProvider.getAccessToken()
+                : Credentials.basic(config.getInboundUser(), config.getInboundPassword()));
         headers.put("Accept", "application/json, text/plain, */*");
         return headers;
     }

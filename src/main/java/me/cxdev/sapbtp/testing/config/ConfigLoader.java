@@ -101,13 +101,18 @@ public class ConfigLoader {
     }
 
     private void applyEnvironmentOverrides(Map<String, Object> values) {
-        override(values, "monitoringBaseUrl", environment.get(ENV_PREFIX + "MONITORING_URL"));
+        override(values, "monitoringBaseUrl", firstNonBlank(environment.get(ENV_PREFIX + "MONITORING_URL"), environment.get("CPI_MONITORING_URL")));
         override(values, "monitoringUser", environment.get(ENV_PREFIX + "MONITORING_USER"));
         override(values, "monitoringPassword", environment.get(ENV_PREFIX + "MONITORING_PASSWORD"));
-        override(values, "inboundBaseUrl", environment.get(ENV_PREFIX + "INBOUND_URL"));
+        override(values, "inboundBaseUrl", firstNonBlank(environment.get(ENV_PREFIX + "INBOUND_URL"), environment.get("CPI_TENANT_URL")));
         override(values, "inboundUser", environment.get(ENV_PREFIX + "INBOUND_USER"));
         override(values, "inboundPassword", environment.get(ENV_PREFIX + "INBOUND_PASSWORD"));
-        override(values, "collectorBaseUrl", environment.get(ENV_PREFIX + "COLLECTOR_URL"));
+        override(values, "collectorBaseUrl", firstNonBlank(environment.get(ENV_PREFIX + "COLLECTOR_URL"), environment.get("COLLECTOR_URL")));
+        override(values, "tokenUrl", firstNonBlank(environment.get(ENV_PREFIX + "TOKEN_URL"), environment.get("CPI_TOKEN_URL")));
+        override(values, "clientId", firstNonBlank(environment.get(ENV_PREFIX + "CLIENT_ID"), environment.get("CPI_CLIENT_ID")));
+        override(values, "clientSecret", firstNonBlank(environment.get(ENV_PREFIX + "CLIENT_SECRET"), environment.get("CPI_CLIENT_SECRET")));
+        override(values, "monitoringClientId", firstNonBlank(environment.get(ENV_PREFIX + "MONITORING_CLIENT_ID"), environment.get("CPI_MONITORING_ID")));
+        override(values, "monitoringClientSecret", firstNonBlank(environment.get(ENV_PREFIX + "MONITORING_CLIENT_SECRET"), environment.get("CPI_MONITORING_SECRET")));
         override(values, "pollingIntervalMs", parseInteger(environment.get(ENV_PREFIX + "POLLING_INTERVAL_MS")));
         override(values, "pollingTimeoutMs", parseInteger(environment.get(ENV_PREFIX + "POLLING_TIMEOUT_MS")));
     }
@@ -116,6 +121,15 @@ public class ConfigLoader {
         if (value != null) {
             values.put(key, value);
         }
+    }
+
+    private String firstNonBlank(String... candidates) {
+        for (String candidate : candidates) {
+            if (candidate != null && !candidate.isBlank()) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     private Integer parseInteger(String value) {
@@ -135,7 +149,12 @@ public class ConfigLoader {
                 stringValue(values.get("inboundPassword")),
                 stringValue(values.get("collectorBaseUrl")),
                 integerValue(values.get("pollingIntervalMs")),
-                integerValue(values.get("pollingTimeoutMs")));
+                integerValue(values.get("pollingTimeoutMs")),
+                stringValue(values.get("tokenUrl")),
+                stringValue(values.get("clientId")),
+                stringValue(values.get("clientSecret")),
+                stringValue(values.get("monitoringClientId")),
+                stringValue(values.get("monitoringClientSecret")));
         validate(config);
         return config;
     }
@@ -156,9 +175,13 @@ public class ConfigLoader {
 
     private void validate(CpiTestConfig config) {
         require(config.getMonitoringBaseUrl(), "monitoringBaseUrl");
-        require(config.getMonitoringUser(), "monitoringUser");
-        require(config.getMonitoringPassword(), "monitoringPassword");
         require(config.getCollectorBaseUrl(), "collectorBaseUrl");
+        boolean hasBasicAuth = !isBlank(config.getMonitoringUser()) && !isBlank(config.getMonitoringPassword());
+        if (!hasBasicAuth && !config.isMonitoringOAuth2Configured()) {
+            throw new ConfigValidationException(
+                    "Missing authentication configuration: provide either monitoringUser/monitoringPassword "
+                            + "(Basic Auth) or tokenUrl/monitoringClientId/monitoringClientSecret (OAuth2 client credentials)");
+        }
         if (config.getPollingIntervalMs() <= 0) {
             throw new ConfigValidationException("Invalid configuration field: pollingIntervalMs must be > 0");
         }
@@ -168,8 +191,12 @@ public class ConfigLoader {
     }
 
     private void require(String value, String fieldName) {
-        if (value == null || value.isBlank()) {
+        if (isBlank(value)) {
             throw new ConfigValidationException("Missing required configuration field: " + fieldName);
         }
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }
